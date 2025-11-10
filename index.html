@@ -246,9 +246,9 @@
         if (!pc) return;
         if (!ev.candidate) {
           if (role === 'host') {
-            $('#offerOut').value = b64encode(JSON.stringify(pc.localDescription));
+            $('#offerOut').value = b64encodeJSON(pc.localDescription);
           } else {
-            $('#answerOut').value = b64encode(JSON.stringify(pc.localDescription));
+            $('#answerOut').value = b64encodeJSON(pc.localDescription);
           }
         }
       };
@@ -271,8 +271,18 @@
       updateConnState();
     }
 
-    function b64encode(str) { return btoa(unescape(encodeURIComponent(str))); }
-    function b64decode(str) { return decodeURIComponent(escape(atob(str))); }
+    function b64encodeJSON(obj) {
+      const enc = new TextEncoder().encode(JSON.stringify(obj));
+      let bin = '';
+      enc.forEach(b => bin += String.fromCharCode(b));
+      return btoa(bin);
+    }
+    function b64decodeJSON(str) {
+      const bin = atob(str);
+      const bytes = new Uint8Array([...bin].map(c => c.charCodeAt(0)));
+      const txt = new TextDecoder().decode(bytes);
+      return JSON.parse(txt);
+    }
 
     // ====== 位置情報（連続） ======
     let myCoord = null; // {lat, lon, acc, t, spd, cog}
@@ -440,7 +450,7 @@
       const offerStr = $('#offerIn').value.trim();
       if (!offerStr) { alert('オファを貼り付けてください'); return; }
       try {
-        const offer = JSON.parse(b64decode(offerStr));
+        const offer = b64decodeJSON(offerStr);
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -453,7 +463,7 @@
       const ansStr = $('#answerIn').value.trim();
       if (!ansStr) { alert('アンサーを貼り付けてください'); return; }
       try {
-        const answer = JSON.parse(b64decode(ansStr));
+        const answer = b64decodeJSON(ansStr);
         await pc.setRemoteDescription(new RTCSessionDescription(answer));
       } catch (e) { alert('アンサーの形式が不正です'); console.error(e); }
     });
