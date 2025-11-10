@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>2台のスマホで方位角（真方位）を計算</title>
+  <style>
+    :root { --bg:#0b1020; --fg:#e8eefc; --muted:#9fb2d8; --accent:#5aa9ff; --good:#2ec27e; --warn:#f6c177; --bad:#ff6b6b; }
+    html,body { height:100%; margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+    .container { max-width:960px; margin:0 auto; padding:20px; }
+    h1 { font-size:1.4rem; margin:0 0 8px; }
+    h2 { font-size:1.1rem; margin:20px 0 8px; color:var(--accent); }
+    p, li, label, small { color:var(--muted); }
+    .card { background:#12172b; border:1px solid #222a46; border-radius:16px; padding:16px; margin:12px 0; box-shadow:0 8px 24px rgba(0,0,0,.25); }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .row-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+    .row-4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:12px; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    button, select { background:#1c2442; color:var(--fg); border:1px solid #2c3a66; border-radius:12px; padding:10px 14px; cursor:pointer; }
+    button:hover { background:#23305a; }
+    button.primary { background:var(--accent); color:#00122a; border:none; }
+    button.good { background:var(--good); color:#072013; border:none; }
+    button.warn { background:var(--warn); color:#1f1409; border:none; }
+    input, textarea { width:100%; background:#0e1428; color:var(--fg); border:1px solid #2c3a66; border-radius:12px; padding:10px 12px; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+    code.kv { display:inline-block; min-width:10ch; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .mono { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .stat { font-size:1.25rem; }
+    .hint { font-size:.9rem; color:#a8b4d9; }
+    .muted { color:var(--muted); }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#1a2140; border:1px solid #2c3a66; font-size:.8rem; margin-left:6px; }
+    .hr { height:1px; background:#273056; border:0; margin:12px 0; }
+    .flex { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .center { text-align:center; }
+    .kbd { background:#0e1428; border:1px solid #2c3a66; padding:0 6px; border-radius:6px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>2台のスマホで方位角（真方位）を計算 <span class="pill">WebRTC + Geolocation</span></h1>
+    <p class="hint">HTTPS環境（例: GitHub Pages/自宅サーバのTLS）で開いてください。iOS Safariはユーザー操作後に位置情報の許可が必要です。</p>
+
+    <div class="card">
+      <h2>使い方（サーバ不要／手動シグナリング）</h2>
+      <ol>
+        <li>両方のiPhoneでこのページを開く。</li>
+        <li>どちらかを<strong>ホスト</strong>にして「<span class="mono">① オファ生成</span>」→表示されたテキストをコピーして相手に共有。</li>
+        <li>もう一方を<strong>ゲスト</strong>にして「<span class="mono">② 相手のオファを貼付→アンサー生成</span>」→生成テキストをホストへ返す。</li>
+        <li>ホストはそのテキストを「<span class="mono">③ アンサー貼付</span>」に貼って接続。</li>
+        <li>両方で「位置情報の取得を開始」を押すと、互いの緯度・経度を送受信し、<strong>自分→相手</strong>の方位角と距離が表示されます。</li>
+      </ol>
+      <p class="hint">※ 公開STUN（stun.l.google.com:19302）を使用。NATの種類によっては繋がらない場合があります。その際は同一Wi‑Fiでお試しください。</p>
+    </div>
+
+    <div class="card">
+      <h2>接続</h2>
+      <div class="flex">
+        <label>役割：
+          <select id="role">
+            <option value="host">ホスト（発呼）</option>
+            <option value="guest">ゲスト（応答）</option>
+          </select>
+        </label>
+        <button id="reset" class="warn">リセット</button>
+        <span id="connState" class="pill">disconnected</span>
+        <span id="dcState" class="pill">dc:closed</span>
+      </div>
+
+      <div class="row">
+        <div>
+          <h3>①（ホスト）オファ生成</h3>
+          <button id="makeOffer" class="primary">オファを生成</button>
+          <textarea id="offerOut" rows="7" placeholder="ここにオファが出力されます"></textarea>
+          <small class="hint">このテキストをゲストに送ってください。</small>
+        </div>
+        <div>
+          <h3>②（ゲスト）相手のオファを貼付 → アンサー生成</h3>
+          <textarea id="offerIn" rows="7" placeholder="相手のオファを貼り付け"></textarea>
+          <button id="makeAnswer" class="primary">アンサーを生成</button>
+          <textarea id="answerOut" rows="7" placeholder="ここにアンサーが出力されます"></textarea>
+          <small class="hint">このテキストをホストへ返してください。</small>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>③（ホスト）アンサー貼付</h3>
+        <textarea id="answerIn" rows="7" placeholder="ゲストから返ってきたアンサーを貼り付け"></textarea>
+        <button id="applyAnswer" class="primary">アンサーを適用</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>測位 & 送受信</h2>
+      <div class="flex">
+        <button id="startGeo" class="good">位置情報の取得を開始</button>
+        <button id="stopGeo">停止</button>
+        <span id="geoState" class="pill">geo:idle</span>
+      </div>
+      <div class="row">
+        <div>
+          <h3>自分（ローカル）</h3>
+          <div class="stat"><span class="mono" id="myLat">--</span>, <span class="mono" id="myLon">--</span></div>
+          <div class="muted">±<span id="myAcc">--</span> m ・ 更新 <span id="myAge">--</span> s前</div>
+          <div class="muted">速度: <span id="mySpdKmh">--</span> km/h ・ <span id="mySpdKt">--</span> kt ／ COG: <span id="myCog">--</span>°</div>
+        </div>
+        <div>
+          <h3>相手（ピア）</h3>
+          <div class="stat"><span class="mono" id="peerLat">--</span>, <span class="mono" id="peerLon">--</span></div>
+          <div class="muted">±<span id="peerAcc">--</span> m ・ 受信 <span id="peerAge">--</span> s前</div>
+          <div class="muted">速度: <span id="peerSpdKmh">--</span> km/h ・ <span id="peerSpdKt">--</span> kt ／ COG: <span id="peerCog">--</span>°</div>
+        </div>
+      </div>
+      </div>
+      <hr class="hr" />
+      <div class="row-4">
+        <div class="center">
+          <div class="muted">Bearing (Me→Peer)</div>
+          <div class="stat" id="bearing">--°</div>
+        </div>
+        <div class="center">
+          <div class="muted">Distance</div>
+          <div class="stat" id="distance">-- m</div>
+        </div>
+        <div class="center">
+          <div class="muted">誤差半径（合成1σ）</div>
+          <div class="stat" id="sigma">-- m</div>
+        </div>
+        <div class="center">
+          <div class="muted">方位角の不確かさ</div>
+          <div class="stat" id="bearingUnc">±--°</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>座標を手入力して計算（オフライン／テスト用）</h2><div class="center">
+          <div class="muted">Distance</div>
+          <div class="stat" id="distance">-- m</div>
+        </div>
+        <div class="center">
+          <div class="muted">品質</div>
+          <div class="stat" id="quality">--</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>座標を手入力して計算（オフライン／テスト用）</h2>
+      <div class="grid">
+        <div>
+          <h3>A（自分）</h3>
+          <label>緯度 <input id="aLat" placeholder="33.5903" /></label>
+          <label>経度 <input id="aLon" placeholder="130.4017" /></label>
+        </div>
+        <div>
+          <h3>B（相手）</h3>
+          <label>緯度 <input id="bLat" placeholder="35.6812" /></label>
+          <label>経度 <input id="bLon" placeholder="139.7671" /></label>
+        </div>
+      </div>
+      <div class="flex" style="margin-top:10px;">
+        <button id="calcManual" class="primary">計算</button>
+        <span class="muted">初期方位（真北=0°）と距離（測地線）を表示</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>注意点</h2>
+      <ul>
+        <li>短距離（&lt; 20 m）ではGPS誤差の影響で方位が不安定になりやすいです。できれば50 m以上離れてテスト。</li>
+        <li>本アプリは<strong>真方位</strong>を表示します（磁方位ではありません）。端末コンパスは使用しません。</li>
+        <li>連続測位は電池を消費します。不要時は停止してください。</li>
+      </ul>
+    </div>
+
+    <p class="hint">© 2025 – MIT License. 必要ならPWA化（オフライン対応）や地図表示（Leaflet/MapLibre）も追加できます。</p>
+  </div>
+
+  <script>
+    // ====== 数学ユーティリティ ======
+    const toRad = d => d * Math.PI / 180;
+    const toDeg = r => r * 180 / Math.PI;
+
+    function bearingDegrees(a, b) {
+      // a,b: {lat, lon} degrees → returns 0–360° (true)
+      const phi1 = toRad(a.lat), phi2 = toRad(b.lat);
+      const lam1 = toRad(a.lon), lam2 = toRad(b.lon);
+      const dlam = lam2 - lam1;
+      const x = Math.sin(dlam) * Math.cos(phi2);
+      const y = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dlam);
+      const theta = Math.atan2(x, y);
+      const deg = (toDeg(theta) + 360) % 360;
+      return deg;
+    }
+
+    function distanceMeters(a, b) {
+      // Haversine via geodesic approximation (sufficient for our use)
+      const R = 6371000; // mean Earth radius (m)
+      const phi1 = toRad(a.lat), phi2 = toRad(b.lat);
+      const dphi = toRad(b.lat - a.lat);
+      const dlam = toRad(b.lon - a.lon);
+      const s = Math.sin(dphi/2)**2 + Math.cos(phi1)*Math.cos(phi2)*Math.sin(dlam/2)**2;
+      const c = 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1-s));
+      return R * c;
+    }
+
+    // ====== DOM helpers ======
+    const $ = sel => document.querySelector(sel);
+    const setText = (sel, v) => $(sel).textContent = v;
+
+    // ====== WebRTC（手動シグナリング） ======
+    let pc = null, dc = null;
+    let role = 'host';
+    let geoWatchId = null;
+    // 直近座標（速度/COG計算用）
+    let lastMyPos = null; // {lat, lon, t}
+    let lastPeerPos = null;
+
+    const connState = $('#connState');
+    const dcState = $('#dcState');
+
+    function updateConnState() {
+      if (pc) connState.textContent = pc.connectionState || 'unknown';
+      if (dc) dcState.textContent = 'dc:' + dc.readyState;
+    }
+
+    function createPeer() {
+      if (pc) pc.close();
+      pc = new RTCPeerConnection({
+        iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }],
+        iceCandidatePoolSize: 0
+      });
+      pc.onconnectionstatechange = updateConnState;
+      pc.oniceconnectionstatechange = updateConnState;
+      pc.onicegatheringstatechange = updateConnState;
+
+      // DataChannel（ゲスト側は ondatachannel で受け取る）
+      if (role === 'host') {
+        dc = pc.createDataChannel('coords', { ordered: true });
+        attachDcHandlers();
+      } else {
+        pc.ondatachannel = (ev) => { dc = ev.channel; attachDcHandlers(); };
+      }
+
+      // trickle ICE（完了後にSDPを出力）
+      pc.onicecandidate = async (ev) => {
+        if (!pc) return;
+        if (!ev.candidate) {
+          if (role === 'host') {
+            $('#offerOut').value = b64encode(JSON.stringify(pc.localDescription));
+          } else {
+            $('#answerOut').value = b64encode(JSON.stringify(pc.localDescription));
+          }
+        }
+      };
+
+      updateConnState();
+      return pc;
+    }
+
+    function attachDcHandlers() {
+      if (!dc) return;
+      dc.onopen = updateConnState;
+      dc.onclose = updateConnState;
+      dc.onerror = (e) => { console.error('DC error', e); updateConnState(); };
+      dc.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'coord') receivePeerCoord(msg);
+        } catch (e) { console.warn('bad message', e); }
+      };
+      updateConnState();
+    }
+
+    function b64encode(str) { return btoa(unescape(encodeURIComponent(str))); }
+    function b64decode(str) { return decodeURIComponent(escape(atob(str))); }
+
+    // ====== 位置情報（連続） ======
+    let myCoord = null; // {lat, lon, acc, t, spd, cog}
+    let peerCoord = null; // {lat, lon, acc, t, spd, cog}
+
+    function startGeo() {
+      if (!('geolocation' in navigator)) { alert('Geolocation未対応'); return; }
+      if (geoWatchId) navigator.geolocation.clearWatch(geoWatchId);
+      geoWatchId = navigator.geolocation.watchPosition(pos => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        const now = Date.now();
+        let spd = null, cog = null;
+        if (lastMyPos) {
+          const dt = Math.max(0.001, (now - lastMyPos.t)/1000);
+          const a = { lat: lastMyPos.lat, lon: lastMyPos.lon };
+          const b = { lat: latitude,    lon: longitude };
+          const d = distanceMeters(a, b);
+          spd = d / dt; // m/s
+          if (d > 0.5) { // 微小移動は方位が不安定なのでガード
+            cog = bearingDegrees(a, b);
+          } else if (myCoord && myCoord.cog != null) {
+            cog = myCoord.cog; // ほぼ据置なら前回値キープ
+          }
+        }
+        lastMyPos = { lat: latitude, lon: longitude, t: now };
+        myCoord = { lat: latitude, lon: longitude, acc: accuracy, t: now, spd, cog };
+        updateMyUI();
+        maybeSend();
+        compute();
+      }, err => {
+        console.error(err);
+        alert('位置情報エラー: ' + err.message);
+      }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+      $('#geoState').textContent = 'geo:watching';
+    }
+      if (geoWatchId) navigator.geolocation.clearWatch(geoWatchId);
+      geoWatchId = navigator.geolocation.watchPosition(pos => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        myCoord = { lat: latitude, lon: longitude, acc: accuracy, t: Date.now() };
+        updateMyUI();
+        maybeSend();
+        compute();
+      }, err => {
+        console.error(err);
+        alert('位置情報エラー: ' + err.message);
+      }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+      $('#geoState').textContent = 'geo:watching';
+    }
+
+    function stopGeo() {
+      if (geoWatchId) navigator.geolocation.clearWatch(geoWatchId);
+      geoWatchId = null;
+      $('#geoState').textContent = 'geo:idle';
+    }
+
+    function updateMyUI() {
+      if (!myCoord) return;
+      setText('#myLat', myCoord.lat.toFixed(6));
+      setText('#myLon', myCoord.lon.toFixed(6));
+      setText('#myAcc', Math.round(myCoord.acc));
+      setText('#myAge', Math.round((Date.now() - myCoord.t)/1000));
+      const spd = myCoord.spd ?? null;
+      setText('#mySpdKmh', spd != null ? (spd*3.6).toFixed(2) : '--');
+      setText('#mySpdKt',  spd != null ? (spd*1.94384449).toFixed(2) : '--');
+      setText('#myCog', myCoord.cog != null ? myCoord.cog.toFixed(1) : '--');
+    }
+
+    function updatePeerUI() {
+      if (!peerCoord) return;
+      setText('#peerLat', peerCoord.lat.toFixed(6));
+      setText('#peerLon', peerCoord.lon.toFixed(6));
+      setText('#peerAcc', peerCoord.acc != null ? Math.round(peerCoord.acc) : '—');
+      setText('#peerAge', Math.round((Date.now() - peerCoord.t)/1000));
+      const spd = peerCoord.spd ?? null;
+      setText('#peerSpdKmh', spd != null ? (spd*3.6).toFixed(2) : '--');
+      setText('#peerSpdKt',  spd != null ? (spd*1.94384449).toFixed(2) : '--');
+      setText('#peerCog', peerCoord.cog != null ? peerCoord.cog.toFixed(1) : '--');
+    }
+
+    function maybeSend() {
+      if (dc && dc.readyState === 'open' && myCoord) {
+        const payload = { type: 'coord', ...myCoord };
+        dc.send(JSON.stringify(payload));
+      }
+    }));
+      }
+    }
+
+    function receivePeerCoord(msg) {
+      const now = Date.now();
+      let spd = Number.isFinite(msg.spd) ? msg.spd : null;
+      let cog = Number.isFinite(msg.cog) ? msg.cog : null;
+      if (lastPeerPos) {
+        const dt = Math.max(0.001, (now - lastPeerPos.t)/1000);
+        const a = { lat: lastPeerPos.lat, lon: lastPeerPos.lon };
+        const b = { lat: msg.lat,        lon: msg.lon };
+        const d = distanceMeters(a, b);
+        if (spd == null) spd = d / dt;
+        if (d > 0.5) cog = bearingDegrees(a, b);
+      }
+      lastPeerPos = { lat: msg.lat, lon: msg.lon, t: now };
+      peerCoord = { lat: msg.lat, lon: msg.lon, acc: msg.acc, t: now, spd, cog };
+      updatePeerUI();
+      compute();
+    };
+      updatePeerUI();
+      compute();
+    }
+
+    function compute() {
+      if (!myCoord || !peerCoord) return;
+      const a = { lat: myCoord.lat, lon: myCoord.lon };
+      const b = { lat: peerCoord.lat, lon: peerCoord.lon };
+      const brg = bearingDegrees(a, b);
+      const dist = distanceMeters(a, b);
+      setText('#bearing', brg.toFixed(1) + '°');
+      setText('#distance', (dist < 1000 ? dist.toFixed(1) + ' m' : (dist/1000).toFixed(3) + ' km'));
+      // 誤差推定：両者の水平精度(1σ)を二乗和平方根で合成
+      const qa = Math.max(1, myCoord.acc || 9999); // m
+      const qb = Math.max(1, peerCoord.acc || 9999); // m
+      const sigma = Math.hypot(qa, qb); // 合成1σ（m）
+      setText('#sigma', sigma < 1000 ? sigma.toFixed(1) + ' m' : (sigma/1000).toFixed(3) + ' km');
+      // 方位角の不確かさ（近似）：atan2(σ, 距離)
+      const bearingUncDeg = toDeg(Math.atan2(sigma, Math.max(1, dist)));
+      setText('#bearingUnc', '±' + (bearingUncDeg < 10 ? bearingUncDeg.toFixed(2) : bearingUncDeg.toFixed(1)) + '°');
+    };
+      const b = { lat: peerCoord.lat, lon: peerCoord.lon };
+      const brg = bearingDegrees(a, b);
+      const dist = distanceMeters(a, b);
+      setText('#bearing', brg.toFixed(1) + '°');
+      setText('#distance', (dist < 1000 ? dist.toFixed(1) + ' m' : (dist/1000).toFixed(3) + ' km'));
+      // 品質目安：両者の精度合成を距離で割る
+      const qa = myCoord.acc || 9999, qb = peerCoord.acc || 9999;
+      const q = (qa + qb) / Math.max(1, dist);
+      const label = q < 0.05 ? '良好' : q < 0.2 ? '注意' : '不確か';
+      setText('#quality', label);
+    }
+
+    // ====== 手動入力計算 ======
+    $('#calcManual').addEventListener('click', () => {
+      const a = { lat: parseFloat($('#aLat').value), lon: parseFloat($('#aLon').value) };
+      const b = { lat: parseFloat($('#bLat').value), lon: parseFloat($('#bLon').value) };
+      if ([a.lat,a.lon,b.lat,b.lon].some(v => Number.isNaN(v))) { alert('数値を入力してください'); return; }
+      const brg = bearingDegrees(a, b);
+      const dist = distanceMeters(a, b);
+      setText('#bearing', brg.toFixed(1) + '°');
+      setText('#distance', (dist < 1000 ? dist.toFixed(1) + ' m' : (dist/1000).toFixed(3) + ' km'));
+      setText('#quality', '—');
+    });
+
+    // ====== UI イベント ======
+    $('#role').addEventListener('change', (e) => { role = e.target.value; });
+
+    $('#makeOffer').addEventListener('click', async () => {
+      role = 'host'; $('#role').value = 'host';
+      createPeer();
+      const offer = await pc.createOffer({ offerToReceiveAudio: false, offerToReceiveVideo: false });
+      await pc.setLocalDescription(offer);
+      // onicecandidate 完了時に #offerOut を埋める
+    });
+
+    $('#makeAnswer').addEventListener('click', async () => {
+      role = 'guest'; $('#role').value = 'guest';
+      createPeer();
+      const offerStr = $('#offerIn').value.trim();
+      if (!offerStr) { alert('オファを貼り付けてください'); return; }
+      try {
+        const offer = JSON.parse(b64decode(offerStr));
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        // onicecandidate 完了時に #answerOut を埋める
+      } catch (e) { alert('オファの形式が不正です'); console.error(e); }
+    });
+
+    $('#applyAnswer').addEventListener('click', async () => {
+      if (!pc) { alert('まずオファの生成から開始してください'); return; }
+      const ansStr = $('#answerIn').value.trim();
+      if (!ansStr) { alert('アンサーを貼り付けてください'); return; }
+      try {
+        const answer = JSON.parse(b64decode(ansStr));
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      } catch (e) { alert('アンサーの形式が不正です'); console.error(e); }
+    });
+
+    $('#startGeo').addEventListener('click', startGeo);
+    $('#stopGeo').addEventListener('click', stopGeo);
+
+    $('#reset').addEventListener('click', () => {
+      try { if (dc) dc.close(); } catch {}
+      try { if (pc) pc.close(); } catch {}
+      pc = null; dc = null; updateConnState();
+      stopGeo();
+      myCoord = null; peerCoord = null;
+      ['#offerOut','#offerIn','#answerOut','#answerIn'].forEach(id => $(id).value = '');
+      ['#myLat','#myLon','#myAcc','#myAge','#peerLat','#peerLon','#peerAcc','#peerAge','#bearing','#distance','#quality'].forEach(id => setText(id,'--'));
+      connState.textContent = 'disconnected';
+      dcState.textContent = 'dc:closed';
+    });
+
+    // 初期状態
+    updateConnState();
+  </script>
+</body>
+</html>
