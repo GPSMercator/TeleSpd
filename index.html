@@ -222,7 +222,6 @@
       if (pc) connState.textContent = pc.connectionState || 'unknown';
       if (dc) dcState.textContent = 'dc:' + dc.readyState;
     }
-
     function createPeer() {
       if (pc) pc.close();
       pc = new RTCPeerConnection({
@@ -233,7 +232,6 @@
       pc.oniceconnectionstatechange = updateConnState;
       pc.onicegatheringstatechange = updateConnState;
 
-      // DataChannel（ゲスト側は ondatachannel で受け取る）
       if (role === 'host') {
         dc = pc.createDataChannel('coords', { ordered: true });
         attachDcHandlers();
@@ -241,20 +239,23 @@
         pc.ondatachannel = (ev) => { dc = ev.channel; attachDcHandlers(); };
       }
 
-      // trickle ICE（完了後にSDPを出力）
-      pc.onicecandidate = async (ev) => {
-        if (!pc) return;
-        if (!ev.candidate) {
-          if (role === 'host') {
-            $('#offerOut').value = b64encodeJSON(pc.localDescription);
-          } else {
-            $('#answerOut').value = b64encodeJSON(pc.localDescription);
-          }
-        }
-      };
+      // 参考: onicecandidate(null)が来ないSafari対策として、
+      // 後段で iceGatheringState=complete を待つ Promise を用意している。
+      pc.onicecandidate = () => { /* no-op: 出力はwait関数で行う */ };
 
       updateConnState();
       return pc;
+    }
+
+    async function waitForIceGatheringComplete(pc, timeoutMs = 5000) {
+      if (!pc) return;
+      if (pc.iceGatheringState === 'complete') return;
+      await new Promise((resolve) => {
+        const done = () => { pc.removeEventListener('icegatheringstatechange', check); resolve(); };
+        const check = () => { if (pc.iceGatheringState === 'complete') done(); };
+        pc.addEventListener('icegatheringstatechange', check);
+        setTimeout(done, timeoutMs); // タイムアウトでも続行（SDPに候補が少なくても接続可能な場合あり）
+      });
     }
 
     function attachDcHandlers() {
@@ -437,16 +438,40 @@
     $('#role').addEventListener('change', (e) => { role = e.target.value; });
 
     $('#makeOffer').addEventListener('click', async () => {
-      role = 'host'; $('#role').value = 'host';
-      createPeer();
+      try {
+        role = 'host'; $('#role').value = 'host';
+        createPeer();
+        const offer = await pc.createOffer({ offerToReceiveAudio: false, offerToReceiveVideo: false });
+        await pc.setLocalDescription(offer);
+        await waitForIceGatheringComplete(pc);
+        $('#offerOut').value = b64encodeJSON(pc.localDescription);
+      } catch (e) {
+        console.error('makeOffer error', e);
+        alert('オファ生成エラー: ' + (e?.message || e));
+      }
+    });
       const offer = await pc.createOffer({ offerToReceiveAudio: false, offerToReceiveVideo: false });
       await pc.setLocalDescription(offer);
       // onicecandidate 完了時に #offerOut を埋める
     });
 
     $('#makeAnswer').addEventListener('click', async () => {
-      role = 'guest'; $('#role').value = 'guest';
-      createPeer();
+      try {
+        role = 'guest'; $('#role').value = 'guest';
+        createPeer();
+        const offerStr = $('#offerIn').value.trim();
+        if (!offerStr) { alert('オファを貼り付けてください'); return; }
+        const offer = b64decodeJSON(offerStr);
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await waitForIceGatheringComplete(pc);
+        $('#answerOut').value = b64encodeJSON(pc.localDescription);
+      } catch (e) {
+        console.error('makeAnswer error', e);
+        alert('アンサー生成エラー: ' + (e?.message || e));
+      }
+    });
       const offerStr = $('#offerIn').value.trim();
       if (!offerStr) { alert('オファを貼り付けてください'); return; }
       try {
