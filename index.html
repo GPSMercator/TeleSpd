@@ -3,147 +3,363 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Peer GPS (2 phones) – シンプル版</title>
+<title>相互位置・距離・方位・速度・COG（2台スマホ・WebRTC）</title>
 <style>
-  :root{--bg:#0b1020;--panel:#131a33;--ink:#e8eefc;--muted:#9fb2d8;--accent:#5aa9ff;--good:#2ec27e;--warn:#f6c177;--bad:#ff6b6b}
-  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Sans","Noto Sans JP",sans-serif}
-  .wrap{max-width:980px;margin:0 auto;padding:14px}
-  h1{font-size:1.2rem;margin:4px 0 12px}
-  .grid{display:grid;grid-template-columns:1fr;gap:10px}
-  @media (min-width:860px){.grid{grid-template-columns:1.1fr .9fr}}
-  .card{background:var(--panel);border-radius:16px;box-shadow:0 8px 28px rgba(0,0,0,.25);padding:14px}
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-  .row > *{flex:1}
-  label{font-weight:600;color:var(--muted);font-size:.9rem}
-  input,textarea,button,select{width:100%;box-sizing:border-box;background:#0e1530;color:var(--ink);border:1px solid #26315e;border-radius:10px;padding:10px 12px}
-  textarea{min-height:120px;resize:vertical}
-  button{cursor:pointer;border:1px solid #3a4ea3;background:linear-gradient(180deg,#1a2560,#141d49);font-weight:700}
-  button.primary{background:linear-gradient(180deg,#3170ff,#2651cc)}
-  button.good{border-color:#1e5e3a;background:linear-gradient(180deg,#2ec27e,#1f8e5c)}
-  button.warn{border-color:#7a5c1a;background:linear-gradient(180deg,#f6c177,#c0923f)}
-  .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace}
-  .stat{display:grid;grid-template-columns:auto 1fr;gap:6px 10px}
-  .stat div:nth-child(odd){color:var(--muted)}
-  .big{font-size:1.25rem;font-weight:800}
-  .muted{color:var(--muted)}
-  .footer{opacity:.7;text-align:center;margin-top:16px;font-size:.85rem}
+:root { --bg:#0c1222; --fg:#e9eefc; --muted:#a9b6d3; --accent:#5aa9ff; --good:#2ec27e; --warn:#f6c177; --bad:#ff6b6b; --card:#111833; }
+* { box-sizing:border-box; }
+html,body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+.container { max-width:1000px; margin:0 auto; padding:16px; }
+h1 { font-size:1.1rem; margin:0 0 8px; }
+h2 { font-size:1rem; margin:18px 0 8px; color:var(--muted); }
+.card { background:var(--card); border:1px solid #1d2444; border-radius:14px; padding:12px; margin-top:12px; box-shadow:0 4px 20px rgba(0,0,0,.2); }
+.row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+@media (max-width: 760px){ .row { grid-template-columns: 1fr; } }
+.kv { display:flex; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px dashed #273056; }
+.kv:last-child{ border-bottom:none; }
+.k { color:var(--muted); }
+.v { font-variant-numeric: tabular-nums; font-weight:600; }
+.small { font-size:.85rem; color:var(--muted); }
+input[type="text"], textarea { width:100%; background:#0b1127; color:var(--fg); border:1px solid #2a3566; border-radius:10px; padding:8px; font-family:inherit; }
+textarea { min-height:120px; resize:vertical; }
+button { background:var(--accent); color:#071120; border:none; border-radius:12px; padding:10px 14px; font-weight:700; cursor:pointer; }
+button.secondary { background:#273056; color:var(--fg); }
+button:disabled { opacity:.5; cursor:not-allowed; }
+.grid-3 { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+hr.sep { border:none; border-top:1px solid #222b52; margin:10px 0; }
+.badge { padding:2px 8px; border-radius:9999px; background:#203056; color:#9fc3ff; font-size:.75rem; }
+.flex { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.rangeBox{ display:flex; gap:8px; align-items:center; }
+.output { white-space:pre-wrap; word-break:break-word; }
+.footer { margin:18px 0 8px; color:#7d8db8; font-size:.85rem; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Peer GPS – 二台のスマホで相互位置・距離・方位・速度・COG をリアルタイム共有（シンプル版）</h1>
-  <div class="grid">
-    <section class="card" id="connect">
-      <h2>1) 接続 (WebRTC)</h2>
-      <div class="row">
-        <button id="btnMakeOffer" class="primary">オファ生成</button>
-        <button id="btnMakeAnswer">オファ貼付 → アンサー生成</button>
-        <button id="btnApplyAnswer" class="good">アンサー貼付（接続完了）</button>
-      </div>
-      <div class="row">
-        <div>
-          <label for="offer">オファ SDP</label>
-          <textarea id="offer" class="mono" placeholder="ここに自動生成／または相手のオファを貼付"></textarea>
-          <div class="row">
-            <button id="btnOfferCopy">オファをコピー</button>
-            <button id="btnOfferPaste" class="good">クリップボードから貼付</button>
-          </div>
-        </div>
-        <div>
-          <label for="answer">アンサー SDP</label>
-          <textarea id="answer" class="mono" placeholder="ここにアンサーを貼付（自動生成後）"></textarea>
-          <div class="row">
-            <button id="btnAnswerCopy">アンサーをコピー</button>
-            <button id="btnAnswerPaste" class="good">クリップボードから貼付</button>
-          </div>
-        </div>
-      </div>
-      <p id="connState" class="muted">未接続</p>
-    </section>
+<div class="container">
+  <h1>2台のスマホでリアルタイム共有：緯度経度（DMS）・距離・方位・速度・COG</h1>
+  <div class="small">HTTPSで開いてください（位置情報・WebRTCの要件）。両方の端末でこのページを開き、下の手順に従って接続します。</div>
 
-    <section class="card" id="loc">
-      <h2>2) 位置共有</h2>
-      <div class="row">
-        <div><button id="btnStartShare" class="good">位置共有開始</button></div>
-        <div><button id="btnStopShare" class="warn">停止</button></div>
+  <div class="card">
+    <h2>接続（コピー＆ペースト式 / WebRTC DataChannel）</h2>
+    <ol class="small">
+      <li><b>端末A</b>で［オファーを作成］→ 出力SDPをコピー。</li>
+      <li><b>端末B</b>で AのSDPを「相手のSDP」に貼り、［アンサーを作成］→ BのSDPをコピー。</li>
+      <li><b>端末A</b>で BのSDPを「相手のSDP」に貼り、［接続を確定］。</li>
+    </ol>
+    <div class="grid-3">
+      <button id="btnOffer">オファーを作成</button>
+      <button id="btnAnswer" disabled>アンサーを作成</button>
+      <button id="btnFinish" disabled>接続を確定</button>
+    </div>
+    <div class="flex" style="margin-top:8px">
+      <button id="btnCopyLocal" class="secondary" disabled>自分のSDPをコピー</button>
+      <button id="btnPasteRemote" class="secondary">相手のSDPを貼る（クリップボード読込）</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div>
+        <div class="small">自分のSDP</div>
+        <textarea id="localSDP" class="mono" readonly></textarea>
       </div>
-      <div class="row">
-        <div>
-          <label>自分 (Self)</label>
-          <div class="stat">
-            <div>緯度 / 経度</div><div id="selfLatLon" class="big">–</div>
-            <div>速度</div><div id="selfSpd">–</div>
-            <div>COG</div><div id="selfCog">–</div>
-          </div>
-        </div>
-        <div>
-          <label>相手 (Peer)</label>
-          <div class="stat">
-            <div>緯度 / 経度</div><div id="peerLatLon" class="big">–</div>
-            <div>速度</div><div id="peerSpd">–</div>
-            <div>COG</div><div id="peerCog">–</div>
-          </div>
-        </div>
+      <div>
+        <div class="small">相手のSDP</div>
+        <textarea id="remoteSDP" class="mono" placeholder="ここに相手のSDPを貼る"></textarea>
       </div>
-      <hr>
-      <div class="row">
-        <div>
-          <label>相対情報</label>
-          <div class="stat">
-            <div>距離</div><div id="rangeMeters" class="big">–</div>
-            <div>方位</div><div id="bearing" class="big">–</div>
-          </div>
-        </div>
-      </div>
-    </section>
+    </div>
+    <div class="small" style="margin-top:8px">状態：<span id="connState" class="badge">未接続</span> / DataChannel：<span id="dcState" class="badge">-</span></div>
   </div>
-  <p class="footer">緯度経度は度分秒表示（秒は小数点以下4桁）。QR機能は削除されています。</p>
+
+  <div class="card">
+    <h2>送信設定</h2>
+    <div class="rangeBox">
+      <label class="small">送信間隔：</label>
+      <input type="range" id="txInterval" min="250" max="5000" step="250" value="1000">
+      <span id="txLabel" class="small">1000 ms</span>
+      <button id="btnApply" class="secondary">適用</button>
+    </div>
+    <div class="small">端末の最新測位を蓄え、指定間隔でまとめて送信します（watchPositionは高頻度）。</div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h2>自分（Local）<span id="myTs" class="small"></span></h2>
+      <div class="kv"><div class="k">緯度</div><div class="v" id="myLat"></div></div>
+      <div class="kv"><div class="k">経度</div><div class="v" id="myLon"></div></div>
+      <div class="kv"><div class="k">速度</div><div class="v" id="mySpd"></div></div>
+      <div class="kv"><div class="k">進行方向（COG）</div><div class="v" id="myCog"></div></div>
+      <div class="kv"><div class="k">方位（ヘディング）</div><div class="v" id="myHead"></div></div>
+      <div class="kv"><div class="k">生データ</div><div class="v small" id="myRaw"></div></div>
+    </div>
+    <div class="card">
+      <h2>相手（Remote）<span id="peerTs" class="small"></span></h2>
+      <div class="kv"><div class="k">緯度</div><div class="v" id="peerLat"></div></div>
+      <div class="kv"><div class="k">経度</div><div class="v" id="peerLon"></div></div>
+      <div class="kv"><div class="k">速度</div><div class="v" id="peerSpd"></div></div>
+      <div class="kv"><div class="k">進行方向（COG）</div><div class="v" id="peerCog"></div></div>
+      <div class="kv"><div class="k">方位（ヘディング）</div><div class="v" id="peerHead"></div></div>
+      <div class="kv"><div class="k">生データ</div><div class="v small" id="peerRaw"></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>相対情報（自分→相手）</h2>
+    <div class="kv"><div class="k">距離</div><div class="v" id="relDist"></div></div>
+    <div class="kv"><div class="k">相手の方位（真方位）</div><div class="v" id="relBrg"></div></div>
+  </div>
+
+  <div class="footer">測位：<code>navigator.geolocation.watchPosition</code>（高精度）。計算：ハーサイン（距離）＋初期方位角。速度はm/s→knots, km/h。COGは <span class="small">heading→なければ直近2点の移動ベクトル</span>。</div>
 </div>
 
 <script>
-const el = id => document.getElementById(id);
-const ui = {
-  offer: el('offer'), answer: el('answer'),
-  connState: el('connState'),
-  selfLatLon: el('selfLatLon'), peerLatLon: el('peerLatLon'),
-  selfSpd: el('selfSpd'), peerSpd: el('peerSpd'),
-  selfCog: el('selfCog'), peerCog: el('peerCog'),
-  rangeMeters: el('rangeMeters'), bearing: el('bearing')
-};
+(() => {
+  // ---------- Utilities ----------
+  const toFixed = (x, n=4) => (Number.isFinite(x) ? x.toFixed(n) : '—');
 
-function toDMS(deg,ns){
-  const d=Math.floor(Math.abs(deg));
-  const minFloat=(Math.abs(deg)-d)*60;
-  const m=Math.floor(minFloat);
-  const sec=(minFloat-m)*60;
-  const hemi=deg>=0?ns[0]:ns[1];
-  return `${d}°${m}′${sec.toFixed(4)}″${hemi}`;
-}
-function fmtLatLon(lat,lon){return `${toDMS(lat,'NS')} / ${toDMS(lon,'EW')}`;}
-function toKnots(ms){return ms*1.9438444924574}
-function toKmh(ms){return ms*3.6}
-function haversine(a,b){const R=6371008.8;const toRad=x=>x*Math.PI/180;const dLat=toRad(b.lat-a.lat),dLon=toRad(b.lon-a.lon);const lat1=toRad(a.lat),lat2=toRad(b.lat);const sinDLat=Math.sin(dLat/2),sinDLon=Math.sin(dLon/2);const h=sinDLat*sinDLat+Math.cos(lat1)*Math.cos(lat2)*sinDLon*sinDLon;return 2*R*Math.asin(Math.min(1,Math.sqrt(h)));}
-function bearingTo(a,b){const toRad=x=>x*Math.PI/180,toDeg=x=>x*180/Math.PI;const lat1=toRad(a.lat),lat2=toRad(b.lat),dLon=toRad(b.lon-a.lon);const y=Math.sin(dLon)*Math.cos(lat2),x=Math.cos(lat1)*Math.sin(lat2)-Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);return((toDeg(Math.atan2(y,x))%360)+360)%360;}
+  function toDMS(deg, lat=true){
+    if (!Number.isFinite(deg)) return '—';
+    const abs = Math.abs(deg);
+    const d = Math.floor(abs);
+    const mFloat = (abs - d) * 60;
+    const m = Math.floor(mFloat);
+    const s = (mFloat - m) * 60;
+    const hemi = lat ? (deg>=0 ? 'N' : 'S') : (deg>=0 ? 'E' : 'W');
+    return `${d}°${m}′${s.toFixed(4)}″ ${hemi}`;
+  }
 
-let pc,dc,watchId=null,self={},peer={};
-const stunServers=[{urls:['stun:stun.l.google.com:19302']}];
-function ensurePC(){if(pc)return pc;pc=new RTCPeerConnection({iceServers:stunServers});pc.ondatachannel=e=>{dc=e.channel;bindDC();};pc.onconnectionstatechange=()=>ui.connState.textContent=`接続: ${pc.connectionState}`;return pc;}
-function bindDC(){dc.onmessage=e=>{const msg=JSON.parse(e.data);if(msg.type==='pos'){peer=msg.payload;updatePeerUI();updateRelative();}};}
-async function makeOffer(){ensurePC();dc=pc.createDataChannel('pos');bindDC();const o=await pc.createOffer();await pc.setLocalDescription(o);ui.offer.value=JSON.stringify(pc.localDescription);}
-async function makeAnswer(){ensurePC();await pc.setRemoteDescription(JSON.parse(ui.offer.value));const a=await pc.createAnswer();await pc.setLocalDescription(a);ui.answer.value=JSON.stringify(pc.localDescription);}
-async function applyAnswer(){await pc.setRemoteDescription(JSON.parse(ui.answer.value));}
+  const toKnots = mps => Number.isFinite(mps) ? (mps * 1.943844492).toFixed(2) : '—';
+  const toKmh   = mps => Number.isFinite(mps) ? (mps * 3.6).toFixed(2) : '—';
 
-function startShare(){if(!navigator.geolocation){alert('位置情報非対応');return;}watchId=navigator.geolocation.watchPosition(p=>{const c=p.coords;self={lat:c.latitude,lon:c.longitude,spd:c.speed||0,cog:c.heading||0};updateSelfUI();if(dc&&dc.readyState==='open')dc.send(JSON.stringify({type:'pos',payload:self}));updateRelative();});}
-function stopShare(){if(watchId)navigator.geolocation.clearWatch(watchId);}
+  // distance (m) & initial bearing (deg) between two lat/lon (deg)
+  function distAndBearing(lat1, lon1, lat2, lon2){
+    if (![lat1,lon1,lat2,lon2].every(Number.isFinite)) return {dist: NaN, brg: NaN};
+    const R = 6371000; // meters
+    const φ1 = lat1*Math.PI/180, φ2 = lat2*Math.PI/180;
+    const Δφ = (lat2-lat1)*Math.PI/180;
+    const Δλ = (lon2-lon1)*Math.PI/180;
+    const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const dist = R*c;
+    const y = Math.sin(Δλ)*Math.cos(φ2);
+    const x = Math.cos(φ1)*Math.sin(φ2) - Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+    let θ = Math.atan2(y, x)*180/Math.PI;
+    if (θ < 0) θ += 360;
+    return {dist, brg: θ};
+  }
 
-function updateSelfUI(){if(self.lat!=null)ui.selfLatLon.textContent=fmtLatLon(self.lat,self.lon);const spd=self.spd||0;const kn=toKnots(spd);const kmh=toKmh(spd);ui.selfSpd.textContent=`${spd.toFixed(2)} m/s  |  ${kn.toFixed(2)} kn  |  ${kmh.toFixed(1)} km/h`;ui.selfCog.textContent=`${(self.cog||0).toFixed(0)}°`;}
-function updatePeerUI(){if(peer.lat!=null)ui.peerLatLon.textContent=fmtLatLon(peer.lat,peer.lon);const spd=peer.spd||0;const kn=toKnots(spd);const kmh=toKmh(spd);ui.peerSpd.textContent=`${spd.toFixed(2)} m/s  |  ${kn.toFixed(2)} kn  |  ${kmh.toFixed(1)} km/h`;ui.peerCog.textContent=`${(peer.cog||0).toFixed(0)}°`;}
-function updateRelative(){if(!self.lat||!peer.lat)return;const R=haversine(self,peer),B=bearingTo(self,peer);ui.rangeMeters.textContent=`${R.toFixed(1)} m`;ui.bearing.textContent=`${B.toFixed(0)}°`;}
+  function clampDeg360(deg){
+    if (!Number.isFinite(deg)) return NaN;
+    deg = deg % 360;
+    return deg < 0 ? deg + 360 : deg;
+  }
 
-async function copyText(txt){try{await navigator.clipboard.writeText(txt);alert('コピーしました');}catch(e){alert('コピー失敗');}}
-async function pasteTextTo(elm){try{elm.value=await navigator.clipboard.readText();}catch(e){alert('貼付失敗');}}
+  function tsStr(t){
+    if (!t) return '';
+    const d = new Date(t);
+    const z = n => String(n).padStart(2,'0');
+    return `（${d.getHours()}:${z(d.getMinutes())}:${z(d.getSeconds())}）`;
+  }
 
-document.addEventListener('click',e=>{switch(e.target.id){case'btnMakeOffer':makeOffer();break;case'btnMakeAnswer':makeAnswer();break;case'btnApplyAnswer':applyAnswer();break;case'btnStartShare':startShare();break;case'btnStopShare':stopShare();break;case'btnOfferCopy':copyText(ui.offer.value);break;case'btnAnswerCopy':copyText(ui.answer.value);break;case'btnOfferPaste':pasteTextTo(ui.offer);break;case'btnAnswerPaste':pasteTextTo(ui.answer);break;}});
+  // ---------- DOM refs ----------
+  const el = id => document.getElementById(id);
+  const myLat = el('myLat'), myLon = el('myLon'), mySpd = el('mySpd'), myCog = el('myCog'), myHead = el('myHead'), myRaw = el('myRaw'), myTs = el('myTs');
+  const peerLat = el('peerLat'), peerLon = el('peerLon'), peerSpd = el('peerSpd'), peerCog = el('peerCog'), peerHead = el('peerHead'), peerRaw = el('peerRaw'), peerTs = el('peerTs');
+  const relDist = el('relDist'), relBrg = el('relBrg');
+  const txInterval = el('txInterval'), txLabel = el('txLabel'), btnApply = el('btnApply');
+
+  const btnOffer = el('btnOffer'), btnAnswer = el('btnAnswer'), btnFinish = el('btnFinish');
+  const btnCopyLocal = el('btnCopyLocal'), btnPasteRemote = el('btnPasteRemote');
+  const localSDP = el('localSDP'), remoteSDP = el('remoteSDP');
+  const connState = el('connState'), dcState = el('dcState');
+
+  // ---------- WebRTC ----------
+  const pc = new RTCPeerConnection({
+    iceServers: [{urls: 'stun:stun.l.google.com:19302'}]
+  });
+  let dc; // data channel
+  let isOfferer = false;
+
+  pc.onconnectionstatechange = () => {
+    connState.textContent = pc.connectionState;
+  };
+  pc.onicegatheringstatechange = () => {
+    // when complete, enable copy
+    if (pc.iceGatheringState === 'complete') {
+      localSDP.value = JSON.stringify(pc.localDescription);
+      btnCopyLocal.disabled = false;
+    }
+  };
+  pc.onicecandidate = e => {
+    // trickle happens; keep textarea updated
+    if (pc.localDescription) {
+      localSDP.value = JSON.stringify(pc.localDescription);
+    }
+  };
+
+  function setupDC(channel){
+    dc = channel;
+    dc.onopen = () => { dcState.textContent = 'open'; };
+    dc.onclose = () => { dcState.textContent = 'closed'; };
+    dc.onmessage = onDCMessage;
+  }
+
+  // Offerer creates channel
+  btnOffer.onclick = async () => {
+    isOfferer = true;
+    setupDC(pc.createDataChannel('pos'));
+    btnOffer.disabled = true;
+    btnAnswer.disabled = false; // allow remote side flow as instruction aid
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      // Wait for ICE to complete before enabling copy (handled in onicegatheringstatechange)
+    } catch (e){ alert('Offer作成エラー: ' + e); }
+  };
+
+  // Answerer path
+  btnAnswer.onclick = async () => {
+    try {
+      const remote = remoteSDP.value.trim();
+      if (!remote) return alert('相手のSDPを貼ってください');
+      await pc.setRemoteDescription(JSON.parse(remote));
+      pc.ondatachannel = ev => setupDC(ev.channel);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      btnFinish.disabled = false;
+    } catch (e){ alert('Answer作成エラー: ' + e); }
+  };
+
+  btnFinish.onclick = async () => {
+    try {
+      const remote = remoteSDP.value.trim();
+      if (!remote) return alert('相手のSDPを貼ってください');
+      await pc.setRemoteDescription(JSON.parse(remote));
+      btnFinish.disabled = true;
+    } catch (e){ alert('接続確定エラー: ' + e); }
+  };
+
+  btnCopyLocal.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(localSDP.value);
+      btnCopyLocal.textContent = 'コピーしました';
+      setTimeout(()=>btnCopyLocal.textContent='自分のSDPをコピー', 1200);
+    } catch { /* ignore */ }
+  };
+  btnPasteRemote.onclick = async () => {
+    try {
+      const t = await navigator.clipboard.readText();
+      if (t) remoteSDP.value = t;
+    } catch { alert('クリップボードから読み取れませんでした'); }
+  };
+
+  // ---------- Geo ----------
+  let lastLocalFix = null;   // {lat, lon, speed(m/s), heading(deg), cog(deg), t}
+  let prevLocalPoint = null; // {lat, lon, t} for COG fallback
+  let lastPeerFix = null;
+  let txTimer = null;
+  let txMs = Number(txInterval.value);
+
+  function updateTxTimer(){
+    if (txTimer) clearInterval(txTimer);
+    txTimer = setInterval(()=> {
+      if (dc && dc.readyState === 'open' && lastLocalFix){
+        dc.send(JSON.stringify({type:'fix', payload:lastLocalFix}));
+      }
+    }, txMs);
+  }
+  updateTxTimer();
+
+  txInterval.addEventListener('input', () => txLabel.textContent = `${txInterval.value} ms`);
+  btnApply.addEventListener('click', () => {
+    txMs = Number(txInterval.value);
+    updateTxTimer();
+    btnApply.textContent = '適用済み';
+    setTimeout(()=>btnApply.textContent='適用', 1000);
+  });
+
+  function onPosition(pos){
+    const { latitude:lat, longitude:lon, speed, heading } = pos.coords; // speed: m/s, heading: deg
+    const t = pos.timestamp || Date.now();
+
+    // Fallback COG from previous point if heading not available
+    let cog = Number.isFinite(heading) ? clampDeg360(heading) : NaN;
+    if (!Number.isFinite(cog) && prevLocalPoint){
+      const { brg } = distAndBearing(prevLocalPoint.lat, prevLocalPoint.lon, lat, lon);
+      if (Number.isFinite(brg)) cog = brg;
+    }
+    // prepare record
+    lastLocalFix = {
+      lat, lon,
+      speed: Number.isFinite(speed) ? speed : NaN,
+      heading: Number.isFinite(heading) ? clampDeg360(heading) : NaN,
+      cog: Number.isFinite(cog) ? cog : NaN,
+      t
+    };
+    // update prev point only if moved > ~3m to avoid jitter
+    if (!prevLocalPoint || distAndBearing(prevLocalPoint.lat, prevLocalPoint.lon, lat, lon).dist > 3){
+      prevLocalPoint = {lat, lon, t};
+    }
+    renderLocal();
+    renderRelative();
+  }
+
+  function onError(err){
+    alert('位置情報エラー: ' + err.message);
+  }
+
+  if ('geolocation' in navigator){
+    navigator.geolocation.watchPosition(onPosition, onError, {
+      enableHighAccuracy:true, maximumAge:1000, timeout:15000
+    });
+  } else {
+    alert('この端末はGeolocationに対応していません');
+  }
+
+  // ---------- DC message ----------
+  function onDCMessage(ev){
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'fix'){
+        lastPeerFix = msg.payload;
+        renderPeer();
+        renderRelative();
+      }
+    } catch(e){ /* ignore non-JSON */ }
+  }
+
+  // ---------- Rendering ----------
+  function renderLocal(){
+    const d = lastLocalFix || {};
+    myLat.textContent = toDMS(d.lat, true);
+    myLon.textContent = toDMS(d.lon, false);
+    mySpd.textContent = Number.isFinite(d.speed) ? `${toKnots(d.speed)} kn / ${toKmh(d.speed)} km/h` : '—';
+    myCog.textContent = Number.isFinite(d.cog) ? `${d.cog.toFixed(1)} °` : '—';
+    myHead.textContent = Number.isFinite(d.heading) ? `${d.heading.toFixed(1)} °` : '—';
+    myRaw.textContent = JSON.stringify(d);
+    myTs.textContent = tsStr(d.t);
+  }
+
+  function renderPeer(){
+    const d = lastPeerFix || {};
+    peerLat.textContent = toDMS(d.lat, true);
+    peerLon.textContent = toDMS(d.lon, false);
+    peerSpd.textContent = Number.isFinite(d.speed) ? `${toKnots(d.speed)} kn / ${toKmh(d.speed)} km/h` : '—';
+    peerCog.textContent = Number.isFinite(d.cog) ? `${d.cog.toFixed(1)} °` : '—';
+    peerHead.textContent = Number.isFinite(d.heading) ? `${d.heading.toFixed(1)} °` : '—';
+    peerRaw.textContent = JSON.stringify(d);
+    peerTs.textContent = tsStr(d.t);
+  }
+
+  function renderRelative(){
+    if (!(lastLocalFix && lastPeerFix)){
+      relDist.textContent = '—';
+      relBrg.textContent = '—';
+      return;
+    }
+    const { dist, brg } = distAndBearing(lastLocalFix.lat, lastLocalFix.lon, lastPeerFix.lat, lastPeerFix.lon);
+    relDist.textContent = Number.isFinite(dist) ? `${dist.toFixed(1)} m` : '—';
+    relBrg.textContent = Number.isFinite(brg) ? `${brg.toFixed(1)} °` : '—';
+  }
+
+})();
 </script>
 </body>
 </html>
