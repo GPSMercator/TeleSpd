@@ -151,22 +151,22 @@
     <h2>接続設定</h2>
     <div class="row">
       <div class="col">
-        <label>ルームID（両方同じ値にしてください）</label>
-        <input id="roomId" placeholder="例: test01, boat01 など" />
+        <label>ルームID</label>
+        <input id="roomId" placeholder="例: test01, abcd01" />
       </div>
       <div class="col">
-        <label>この端末ID</label>
+        <label>端末ID</label>
         <select id="deviceId">
-          <option value="A">A（片方はこちら）</option>
-          <option value="B">B（もう片方こちら）</option>
+          <option value="A">Ａ</option>
+          <option value="B">Ｂ</option>
         </select>
       </div>
     </div>
     <button id="connectBtn">接続 & 位置共有開始</button>
     <div class="small">
-      ・2台とも同じルームIDで接続してください。<br>
-      ・一方を「A」、もう一方を「B」にします。<br>
-      ・接続後、位置情報の使用を許可してください（HTTPS推奨）。
+      ・2台とも同じルームIDで接続する。<br>
+      ・一方を「A」、もう一方を「B」にする。<br>
+      ・接続後、位置情報の使用を許可する。（HTTPS推奨）
     </div>
     <div class="small" style="margin-top:6px;">
       <span id="statusDot" class="status-dot"></span>
@@ -192,7 +192,7 @@
       <div class="label">速度</div>
       <div class="value" id="selfSpeed">----</div>
 
-      <div class="label">COG（真方位）</div>
+      <div class="label">COG</div>
       <div class="value" id="selfCog">----</div>
     </div>
   </div>
@@ -215,7 +215,7 @@
       <div class="label">速度</div>
       <div class="value" id="otherSpeed">----</div>
 
-      <div class="label">COG（真方位）</div>
+      <div class="label">COG</div>
       <div class="value" id="otherCog">----</div>
     </div>
   </div>
@@ -244,13 +244,13 @@
   // ==== ここをあなたの Firebase 設定に書き換えてください ====
   // Firebaseコンソール→「アプリを追加（Web）」で出てくる設定オブジェクト
   const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    apiKey: "AIzaSyAyDeKjhbCLrX3P53xfT8MZqraiMIfw3oc",
+    authDomain: "tele-gps.firebaseapp.com",
     databaseURL: "https://YOUR_PROJECT_ID.firebaseio.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "SENDER_ID",
-    appId: "APP_ID"
+    projectId: "tele-gps",
+    storageBucket: "tele-gps.firebasestorage.app",
+    messagingSenderId: "802995237242",
+    appId: "df99182d8600abeaa566c3"
   };
   // ===========================================================
 
