@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WebRTC版 2台スマホGPS共有</title>
+  <style>
+    :root {
+      --bg: #050814;
+      --card: #101628;
+      --fg: #f4f7ff;
+      --muted: #9fb2d8;
+      --accent: #5aa9ff;
+      --danger: #ff6b6b;
+      --good: #2ec27e;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: radial-gradient(circle at top, #17233f 0, #050814 55%);
+      color: var(--fg);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", "Noto Sans JP", sans-serif;
+    }
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 1.3rem;
+      margin: 0 0 6px;
+    }
+    h2 {
+      font-size: 1.05rem;
+      margin: 18px 0 8px;
+      color: var(--muted);
+    }
+    .card {
+      background: rgba(8, 15, 36, 0.9);
+      border-radius: 12px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      border: 1px solid rgba(120, 140, 200, 0.35);
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(12px);
+    }
+    button {
+      margin-top: 8px;
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: none;
+      background: linear-gradient(135deg, #5aa9ff, #4ad2ff);
+      color: #020409;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .col {
+      flex: 1 1 150px;
+      min-width: 0;
+    }
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 90px;
+      border-radius: 8px;
+      border: 1px solid rgba(140, 160, 220, 0.6);
+      background: rgba(3, 8, 25, 0.9);
+      color: var(--fg);
+      font-size: 0.8rem;
+      font-family: "SF Mono", "Roboto Mono", Consolas, monospace;
+      padding: 6px 8px;
+      resize: vertical;
+    }
+    label {
+      font-size: 0.85rem;
+      color: var(--muted);
+      display: block;
+      margin-bottom: 4px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 16px;
+      font-size: 0.9rem;
+    }
+    .label {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .value {
+      font-family: "SF Mono", "Roboto Mono", Consolas, monospace;
+      font-size: 0.9rem;
+      text-align: right;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      background: rgba(90, 169, 255, 0.16);
+      border: 1px solid rgba(90, 169, 255, 0.5);
+      color: var(--accent);
+      margin-left: 8px;
+    }
+    .small {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 4px;
+      background: var(--danger);
+    }
+    .status-dot.ok {
+      background: var(--good);
+    }
+    .status-text {
+      font-size: 0.8rem;
+      color: var(--muted);
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>
+    Tele GPS system
+    <span class="badge">P2P</span>
+  </h1>
+
+  <div class="card">
+    <h2>1. 役割の選択</h2>
+    <div class="row">
+      <div class="col">
+        <button id="startCallerBtn">この端末を A（発信側）として開始</button>
+        <div class="small">
+          A側はオファーSDPを生成し、Bへコピーして渡します。
+        </div>
+      </div>
+      <div class="col">
+        <button id="startAnswerBtn">この端末を B（応答側）として開始</button>
+        <div class="small">
+          B側はAから受け取ったオファーSDPを貼り付けてアンサーを返します。
+        </div>
+      </div>
+    </div>
+    <div class="small" style="margin-top:6px;">
+      <span id="statusDot" class="status-dot"></span>
+      <span id="statusText" class="status-text">未初期化</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2. SDP のやり取り（コピペでシグナリング）</h2>
+    <div class="row">
+      <div class="col">
+        <label for="offerOut">オファーSDP（発信側 → 受信側へ）</label>
+        <textarea id="offerOut" placeholder="A側：ボタン操作後にここに自動生成されます（全コピーしてBへ送信）"></textarea>
+      </div>
+      <div class="col">
+        <label for="offerIn">オファーSDP（Aから貼り付け）</label>
+        <textarea id="offerIn" placeholder="B側：Aから送られたオファーをここに全貼り付け"></textarea>
+        <button id="applyOfferBtn">オファーを読み込んでアンサー生成（B側）</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <div class="col">
+        <label for="answerOut">アンサーSDP（B → Aへ）</label>
+        <textarea id="answerOut" placeholder="B側：オファーを読み込むとここに生成されます（全コピーしてAへ送信）"></textarea>
+      </div>
+      <div class="col">
+        <label for="answerIn">アンサーSDP（Bから貼り付け）</label>
+        <textarea id="answerIn" placeholder="A側：Bから送られたアンサーをここに全貼り付け"></textarea>
+        <button id="applyAnswerBtn">アンサーを適用（A側）</button>
+      </div>
+    </div>
+    <div class="small">
+      ※ オファー／アンサーは JSON 形式です。<br>
+      ※ 「{」から「}」まで<strong>一字も抜け漏れなく</strong>コピー＆ペーストしてください。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>自分の位置</h2>
+    <div class="grid">
+      <div class="label">緯度</div>
+      <div class="value" id="selfLat">----</div>
+
+      <div class="label">経度</div>
+      <div class="value" id="selfLon">----</div>
+
+      <div class="label">海抜高度</div>
+      <div class="value" id="selfAlt">----</div>
+
+      <div class="label">測位時刻</div>
+      <div class="value" id="selfTime">----</div>
+
+      <div class="label">速度</div>
+      <div class="value" id="selfSpeed">----</div>
+
+      <div class="label">COG（真方位）</div>
+      <div class="value" id="selfCog">----</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>相手の位置</h2>
+    <div class="grid">
+      <div class="label">緯度</div>
+      <div class="value" id="otherLat">----</div>
+
+      <div class="label">経度</div>
+      <div class="value" id="otherLon">----</div>
+
+      <div class="label">海抜高度</div>
+      <div class="value" id="otherAlt">----</div>
+
+      <div class="label">測位時刻</div>
+      <div class="value" id="otherTime">----</div>
+
+      <div class="label">速度</div>
+      <div class="value" id="otherSpeed">----</div>
+
+      <div class="label">COG（真方位）</div>
+      <div class="value" id="otherCog">----</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>相対情報（自分から見た相手）</h2>
+    <div class="grid">
+      <div class="label">距離</div>
+      <div class="value" id="relDistance">----</div>
+
+      <div class="label">方位（真方位）</div>
+      <div class="value" id="relBearing">----</div>
+    </div>
+    <div class="small">
+      ※ 双方の位置が取得できた時に自動計算されます。
+    </div>
+  </div>
+</div>
+<h2 style="text-align:center">福岡県立水産高等学校 海洋科 航海コース</h2>
+<script>
+  // ========== 状態管理用変数 ==========
+  let pc = null;
+  let dataChannel = null;
+  let isCaller = null;      // true: A側, false: B側
+  let watchId = null;
+
+  let lastSelfPos = null;
+  let lastSelfCog = null;
+
+  let selfData = null;
+  let otherData = null;
+
+  // ========== DOM取得 ==========
+  const startCallerBtn = document.getElementById("startCallerBtn");
+  const startAnswerBtn = document.getElementById("startAnswerBtn");
+  const statusDot = document.getElementById("statusDot");
+  const statusText = document.getElementById("statusText");
+
+  const offerOut = document.getElementById("offerOut");
+  const offerIn  = document.getElementById("offerIn");
+  const answerOut = document.getElementById("answerOut");
+  const answerIn  = document.getElementById("answerIn");
+
+  const applyOfferBtn = document.getElementById("applyOfferBtn");
+  const applyAnswerBtn = document.getElementById("applyAnswerBtn");
+
+  function setStatus(ok, text) {
+    if (ok) statusDot.classList.add("ok");
+    else statusDot.classList.remove("ok");
+    statusText.textContent = text;
+  }
+
+  // ========== 位置・方位計算ユーティリティ ==========
+  function toDMS(deg, isLat) {
+    if (deg === null || deg === undefined) return "----";
+    const abs = Math.abs(deg);
+    const d = Math.floor(abs);
+    const min = (abs - d) * 60;
+    const m = Math.floor(min);
+    const s = (min - m) * 60;
+    const hemi = isLat ? (deg >= 0 ? "N" : "S") : (deg >= 0 ? "E" : "W");
+    return `${hemi} ${d}°${m}'${s.toFixed(4)}"`;
+  }
+
+  function formatTime(ts) {
+    if (!ts) return "----";
+    const d = new Date(ts);
+    return d.toLocaleString("ja-JP");
+  }
+
+  function msToSpeedStrings(ms) {
+    if (ms === null || ms === undefined || isNaN(ms)) return "----";
+    const kmh = ms * 3.6;
+    const knots = ms * 1.943844;
+    return `${kmh.toFixed(1)} km/h / ${knots.toFixed(2)} kt`;
+  }
+
+  function bearingDeg(lat1, lon1, lat2, lon2) {
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    const y = Math.sin(Δλ) * Math.cos(φ2);
+    const x = Math.cos(φ1) * Math.sin(φ2) -
+              Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+    const θ = Math.atan2(y, x);
+    let brng = θ * 180 / Math.PI;
+    brng = (brng + 360) % 360;
+    return brng;
+  }
+
+  function distanceMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000; // Earth radius [m]
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  // ========== UI更新 ==========
+  function updateSelfUI(data) {
+    document.getElementById("selfLat").textContent = toDMS(data.lat, true);
+    document.getElementById("selfLon").textContent = toDMS(data.lon, false);
+    document.getElementById("selfAlt").textContent =
+      data.alt !== null && data.alt !== undefined
+        ? data.alt.toFixed(1) + " m"
+        : "----";
+    document.getElementById("selfTime").textContent = formatTime(data.t);
+    document.getElementById("selfSpeed").textContent =
+      msToSpeedStrings(data.speed);
+    document.getElementById("selfCog").textContent =
+      data.cog !== null && data.cog !== undefined
+        ? data.cog.toFixed(1) + "°"
+        : "----";
+  }
+
+  function updateOtherUI(data) {
+    if (!data) {
+      document.getElementById("otherLat").textContent = "----";
+      document.getElementById("otherLon").textContent = "----";
+      document.getElementById("otherAlt").textContent = "----";
+      document.getElementById("otherTime").textContent = "----";
+      document.getElementById("otherSpeed").textContent = "----";
+      document.getElementById("otherCog").textContent = "----";
+      return;
+    }
+    document.getElementById("otherLat").textContent = toDMS(data.lat, true);
+    document.getElementById("otherLon").textContent = toDMS(data.lon, false);
+    document.getElementById("otherAlt").textContent =
+      data.alt !== null && data.alt !== undefined
+        ? data.alt.toFixed(1) + " m"
+        : "----";
+    document.getElementById("otherTime").textContent = formatTime(data.t);
+    document.getElementById("otherSpeed").textContent =
+      msToSpeedStrings(data.speed);
+    document.getElementById("otherCog").textContent =
+      data.cog !== null && data.cog !== undefined
+        ? data.cog.toFixed(1) + "°"
+        : "----";
+  }
+
+  function updateRelativeUI() {
+    const distElem = document.getElementById("relDistance");
+    const brgElem = document.getElementById("relBearing");
+
+    if (!selfData || !otherData) {
+      distElem.textContent = "----";
+      brgElem.textContent = "----";
+      return;
+    }
+    const d = distanceMeters(selfData.lat, selfData.lon, otherData.lat, otherData.lon);
+    const b = bearingDeg(selfData.lat, selfData.lon, otherData.lat, otherData.lon);
+    distElem.textContent = d.toFixed(1) + " m";
+    brgElem.textContent = b.toFixed(1) + "°";
+  }
+
+  // ========== Geolocation ==========
+  function startGeolocation() {
+    if (!navigator.geolocation) {
+      setStatus(false, "この端末は Geolocation API に対応していません。");
+      return;
+    }
+
+    setStatus(false, "位置情報取得中…（接続前でも自位置のみ表示）");
+
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const c = pos.coords;
+        const now = pos.timestamp;
+
+        let cog = null;
+        if (lastSelfPos &&
+            (c.latitude !== lastSelfPos.lat ||
+             c.longitude !== lastSelfPos.lon)) {
+          cog = bearingDeg(
+            lastSelfPos.lat, lastSelfPos.lon,
+            c.latitude, c.longitude
+          );
+          lastSelfCog = cog;
+        } else if (lastSelfCog !== null) {
+          cog = lastSelfCog;
+        }
+
+        lastSelfPos = { lat: c.latitude, lon: c.longitude, t: now };
+
+        selfData = {
+          lat: c.latitude,
+          lon: c.longitude,
+          alt: c.altitude,
+          speed: c.speed,
+          cog: cog,
+          t: now
+        };
+
+        // 自分UI更新
+        updateSelfUI(selfData);
+
+        // WebRTCで送信
+        if (dataChannel && dataChannel.readyState === "open") {
+          try {
+            dataChannel.send(JSON.stringify({ type: "pos", data: selfData }));
+          } catch (e) {
+            console.error("send error:", e);
+          }
+        }
+
+        // 相対情報更新
+        updateRelativeUI();
+      },
+      (err) => {
+        console.error(err);
+        setStatus(false, "位置情報取得エラー: " + err.message);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 1000,
+        timeout: 10000
+      }
+    );
+  }
+
+  // ========== WebRTC ピア接続 ==========
+  function setupPeerConnection(asCaller) {
+    isCaller = asCaller;
+
+    pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" }
+      ]
+    });
+
+    // ICE候補収集完了時にSDPをテキストエリアへ出力
+    pc.onicecandidate = (ev) => {
+      if (ev.candidate) return; // まだ途中
+      const desc = pc.localDescription;
+      if (!desc) return;
+      const json = JSON.stringify(desc);
+      if (desc.type === "offer") {
+        offerOut.value = json;
+      } else if (desc.type === "answer") {
+        answerOut.value = json;
+      }
+    };
+
+    // データチャネル
+    if (asCaller) {
+      dataChannel = pc.createDataChannel("pos");
+      attachDataChannelHandlers(dataChannel);
+    } else {
+      pc.ondatachannel = (ev) => {
+        dataChannel = ev.channel;
+        attachDataChannelHandlers(dataChannel);
+      };
+    }
+
+    pc.onconnectionstatechange = () => {
+      console.log("connectionState:", pc.connectionState);
+      if (pc.connectionState === "connected") {
+        setStatus(true, "WebRTC接続済み（P2P）");
+      } else if (pc.connectionState === "disconnected" ||
+                 pc.connectionState === "failed" ||
+                 pc.connectionState === "closed") {
+        setStatus(false, "WebRTC切断/エラー: " + pc.connectionState);
+      }
+    };
+  }
+
+  function attachDataChannelHandlers(dc) {
+    dc.onopen = () => {
+      console.log("DataChannel open");
+      setStatus(true, "データチャネル接続済み（位置情報共有中）");
+      // 現在位置が取れていれば、すぐに送信開始
+      if (selfData) {
+        try {
+          dc.send(JSON.stringify({ type: "pos", data: selfData }));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    };
+    dc.onclose = () => {
+      console.log("DataChannel close");
+      setStatus(false, "データチャネル切断");
+    };
+    dc.onerror = (e) => {
+      console.error("DataChannel error:", e);
+      setStatus(false, "データチャネルエラー");
+    };
+    dc.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === "pos") {
+          otherData = msg.data;
+          updateOtherUI(otherData);
+          updateRelativeUI();
+        }
+      } catch (e) {
+        console.error("onmessage parse error:", e);
+      }
+    };
+  }
+
+  // ========== イベントハンドラ ==========
+  startCallerBtn.addEventListener("click", async () => {
+    if (pc) {
+      alert("すでに初期化されています。");
+      return;
+    }
+    setupPeerConnection(true);
+    setStatus(false, "A側：オファー生成中…");
+    startCallerBtn.disabled = true;
+    startAnswerBtn.disabled = true;
+
+    startGeolocation(); // 位置取得開始
+
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      setStatus(false, "A側：オファーSDP生成完了。テキストをBへ送ってください。");
+    } catch (e) {
+      console.error(e);
+      setStatus(false, "A側：オファー生成エラー");
+    }
+  });
+
+  startAnswerBtn.addEventListener("click", () => {
+    if (pc) {
+      alert("すでに初期化されています。");
+      return;
+    }
+    setupPeerConnection(false);
+    setStatus(false, "B側：AからのオファーSDPを貼付後、ボタンを押してください。");
+    startCallerBtn.disabled = true;
+    startAnswerBtn.disabled = true;
+
+    startGeolocation(); // 位置取得開始
+  });
+
+  applyOfferBtn.addEventListener("click", async () => {
+    if (!pc || isCaller !== false) {
+      alert("B側として初期化されている必要があります。（「この端末をBとして開始」を先に押してください）");
+      return;
+    }
+    const txt = offerIn.value.trim();
+    if (!txt) {
+      alert("オファーSDPが空です。A側から受け取ったJSONを貼り付けてください。");
+      return;
+    }
+    try {
+      const desc = JSON.parse(txt);
+      await pc.setRemoteDescription(desc);
+      setStatus(false, "B側：オファー受信。アンサー生成中…");
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      setStatus(false, "B側：アンサーSDP生成完了。テキストをAへ送ってください。");
+    } catch (e) {
+      console.error(e);
+      setStatus(false, "B側：オファー読み込み/アンサー生成エラー");
+    }
+  });
+
+  applyAnswerBtn.addEventListener("click", async () => {
+    if (!pc || isCaller !== true) {
+      alert("A側として初期化されている必要があります。（「この端末をAとして開始」を先に押してください）");
+      return;
+    }
+    const txt = answerIn.value.trim();
+    if (!txt) {
+      alert("アンサーSDPが空です。B側から受け取ったJSONを貼り付けてください。");
+      return;
+    }
+    try {
+      const desc = JSON.parse(txt);
+      await pc.setRemoteDescription(desc);
+      setStatus(false, "A側：アンサー適用完了。接続確立を待っています…");
+    } catch (e) {
+      console.error(e);
+      setStatus(false, "A側：アンサー適用エラー");
+    }
+  });
+</script>
+</body>
+</html>
+
