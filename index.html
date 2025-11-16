@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>2台のスマホ位置共有＆方位計算</title>
+  <title>Tele GPS System(webRTC)</title>
   <style>
     :root {
       --bg: #050814;
@@ -18,7 +18,7 @@
       margin: 0;
       padding: 0;
       height: 100%;
-      background: radial-gradient(circle at top, #17233f 0, #050814 55%);
+      background: radial-gradient(circle at top, #004dff 0, #000000 55%);
       color: var(--fg);
       font-family: system-ui, -apple-system, BlinkMacSystemFont,
         "Segoe UI", "Noto Sans JP", sans-serif;
@@ -46,35 +46,14 @@
       box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
       backdrop-filter: blur(12px);
     }
-    label {
-      font-size: 0.85rem;
-      color: var(--muted);
-      display: block;
-      margin-bottom: 4px;
-    }
-    input, select {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 6px 8px;
-      border-radius: 8px;
-      border: 1px solid rgba(140, 160, 220, 0.6);
-      background: rgba(3, 8, 25, 0.9);
-      color: var(--fg);
-      font-size: 0.9rem;
-      outline: none;
-    }
-    input:focus, select:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 1px rgba(90, 169, 255, 0.6);
-    }
     button {
       margin-top: 8px;
       width: 100%;
       padding: 8px 10px;
       border-radius: 999px;
       border: none;
-      background: linear-gradient(135deg, #5aa9ff, #4ad2ff);
-      color: #020409;
+      background: linear-gradient(135deg, #5affa7, #00ff15);
+      color: #000000;
       font-weight: 600;
       font-size: 0.95rem;
       cursor: pointer;
@@ -91,6 +70,25 @@
     .col {
       flex: 1 1 150px;
       min-width: 0;
+    }
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 90px;
+      border-radius: 8px;
+      border: 1px solid rgba(140, 160, 220, 0.6);
+      background: rgba(0, 0, 0, 0.9);
+      color: var(--fg);
+      font-size: 0.8rem;
+      font-family: "SF Mono", "Roboto Mono", Consolas, monospace;
+      padding: 6px 8px;
+      resize: vertical;
+    }
+    label {
+      font-size: 0.85rem;
+      color: var(--muted);
+      display: block;
+      margin-bottom: 4px;
     }
     .grid {
       display: grid;
@@ -113,7 +111,7 @@
       border-radius: 999px;
       font-size: 0.75rem;
       background: rgba(90, 169, 255, 0.16);
-      border: 1px solid rgba(90, 169, 255, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.5);
       color: var(--accent);
       margin-left: 8px;
     }
@@ -144,33 +142,58 @@
 <div class="container">
   <h1>
     Tele GPS system
-    <span class="badge">ver0.1</span>
+    <span class="badge">P2P</span>
   </h1>
 
   <div class="card">
-    <h2>接続設定</h2>
+    <h2>1. 役割の選択</h2>
     <div class="row">
       <div class="col">
-        <label>ルームID</label>
-        <input id="roomId" placeholder="例: test01, abcd01" />
+        <button id="startCallerBtn">A（発信側）として開始</button>
+        <div class="small">
+          Aは、オファーSDPを生成し、Bへコピーして渡す。
+        </div>
       </div>
       <div class="col">
-        <label>端末ID</label>
-        <select id="deviceId">
-          <option value="A">Ａ</option>
-          <option value="B">Ｂ</option>
-        </select>
+        <button id="startAnswerBtn">B（応答側）として開始</button>
+        <div class="small">
+          Bは、Aから受け取ったオファーSDPを貼り付け、アンサーを返す。
+        </div>
       </div>
-    </div>
-    <button id="connectBtn">接続 & 位置共有開始</button>
-    <div class="small">
-      ・2台とも同じルームIDで接続する。<br>
-      ・一方を「A」、もう一方を「B」にする。<br>
-      ・接続後、位置情報の使用を許可する。（HTTPS推奨）
     </div>
     <div class="small" style="margin-top:6px;">
       <span id="statusDot" class="status-dot"></span>
-      <span id="statusText" class="status-text">未接続</span>
+      <span id="statusText" class="status-text">未初期化</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2. SDP のやり取り（コピペでシグナリング）</h2>
+    <div class="row">
+      <div class="col">
+        <label for="offerOut">オファーSDP（発信側 → 受信側へ）</label>
+        <textarea id="offerOut" placeholder="A側：ボタン操作後にここに自動生成されます（全コピーしてBへ送信）"></textarea>
+      </div>
+      <div class="col">
+        <label for="offerIn">オファーSDP（Aから貼り付け）</label>
+        <textarea id="offerIn" placeholder="B側：Aから送られたオファーをここに全貼り付け"></textarea>
+        <button id="applyOfferBtn">オファーを読み込みアンサー生成（B側）</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <div class="col">
+        <label for="answerOut">アンサーSDP（B → Aへ）</label>
+        <textarea id="answerOut" placeholder="B側：オファーを読み込むとここに生成されます（全コピーしてAへ送信）"></textarea>
+      </div>
+      <div class="col">
+        <label for="answerIn">アンサーSDP（Bから貼り付け）</label>
+        <textarea id="answerIn" placeholder="A側：Bから送られたアンサーをここに全貼り付け"></textarea>
+        <button id="applyAnswerBtn">アンサーを適用（A側）</button>
+      </div>
+    </div>
+    <div class="small">
+      ※ <br>
+      ※ 「{」から「}」まで<strong>一字も抜け漏れなく</strong>コピー＆ペーストすること。
     </div>
   </div>
 
@@ -192,7 +215,7 @@
       <div class="label">速度</div>
       <div class="value" id="selfSpeed">----</div>
 
-      <div class="label">COG</div>
+      <div class="label">COG（真方位）</div>
       <div class="value" id="selfCog">----</div>
     </div>
   </div>
@@ -215,7 +238,7 @@
       <div class="label">速度</div>
       <div class="value" id="otherSpeed">----</div>
 
-      <div class="label">COG</div>
+      <div class="label">COG（真方位）</div>
       <div class="value" id="otherCog">----</div>
     </div>
   </div>
@@ -230,59 +253,45 @@
       <div class="value" id="relBearing">----</div>
     </div>
     <div class="small">
-      ※距離と方位は、双方の位置が取得できた時に自動計算されます。
+      ※ 
     </div>
   </div>
 </div>
 <h2 style="text-align:center">福岡県立水産高等学校 海洋科 航海コース</h2>
-
-<!-- Firebase（compat版）CDN：Realtime Database を利用 -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.3.0/firebase-app-compat.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/12.3.0/firebase-database-compat.min.js"></script>
-
 <script>
-  // ==== ここをあなたの Firebase 設定に書き換えてください ====
-  // Firebaseコンソール→「アプリを追加（Web）」で出てくる設定オブジェクト
-  const firebaseConfig = {
-    apiKey: "AIzaSyAyDeKjhbCLrX3P53xfT8MZqraiMIfw3oc",
-    authDomain: "tele-gps.firebaseapp.com",
-    databaseURL: "https://YOUR_PROJECT_ID.firebaseio.com",
-    projectId: "tele-gps",
-    storageBucket: "tele-gps.firebasestorage.app",
-    messagingSenderId: "802995237242",
-    appId: "df99182d8600abeaa566c3"
-  };
-  // ===========================================================
-
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.database();
-
-  const connectBtn = document.getElementById("connectBtn");
-  const roomInput = document.getElementById("roomId");
-  const deviceSelect = document.getElementById("deviceId");
-  const statusDot = document.getElementById("statusDot");
-  const statusText = document.getElementById("statusText");
-
-  let roomId = null;
-  let deviceId = null;
-  let otherId = null;
+  // ========== 状態管理用変数 ==========
+  let pc = null;
+  let dataChannel = null;
+  let isCaller = null;      // true: A側, false: B側
   let watchId = null;
 
-  let lastSelfPos = null; // {lat, lon, t}
+  let lastSelfPos = null;
   let lastSelfCog = null;
 
   let selfData = null;
   let otherData = null;
 
+  // ========== DOM取得 ==========
+  const startCallerBtn = document.getElementById("startCallerBtn");
+  const startAnswerBtn = document.getElementById("startAnswerBtn");
+  const statusDot = document.getElementById("statusDot");
+  const statusText = document.getElementById("statusText");
+
+  const offerOut = document.getElementById("offerOut");
+  const offerIn  = document.getElementById("offerIn");
+  const answerOut = document.getElementById("answerOut");
+  const answerIn  = document.getElementById("answerIn");
+
+  const applyOfferBtn = document.getElementById("applyOfferBtn");
+  const applyAnswerBtn = document.getElementById("applyAnswerBtn");
+
   function setStatus(ok, text) {
-    if (ok) {
-      statusDot.classList.add("ok");
-    } else {
-      statusDot.classList.remove("ok");
-    }
+    if (ok) statusDot.classList.add("ok");
+    else statusDot.classList.remove("ok");
     statusText.textContent = text;
   }
 
+  // ========== 位置・方位計算ユーティリティ ==========
   function toDMS(deg, isLat) {
     if (deg === null || deg === undefined) return "----";
     const abs = Math.abs(deg);
@@ -321,7 +330,7 @@
   }
 
   function distanceMeters(lat1, lon1, lat2, lon2) {
-    const R = 6371000; // m
+    const R = 6371000; // Earth radius [m]
     const φ1 = lat1 * Math.PI / 180;
     const φ2 = lat2 * Math.PI / 180;
     const Δφ = (lat2 - lat1) * Math.PI / 180;
@@ -333,17 +342,15 @@
     return R * c;
   }
 
+  // ========== UI更新 ==========
   function updateSelfUI(data) {
-    document.getElementById("selfLat").textContent =
-      toDMS(data.lat, true);
-    document.getElementById("selfLon").textContent =
-      toDMS(data.lon, false);
+    document.getElementById("selfLat").textContent = toDMS(data.lat, true);
+    document.getElementById("selfLon").textContent = toDMS(data.lon, false);
     document.getElementById("selfAlt").textContent =
       data.alt !== null && data.alt !== undefined
         ? data.alt.toFixed(1) + " m"
         : "----";
-    document.getElementById("selfTime").textContent =
-      formatTime(data.t);
+    document.getElementById("selfTime").textContent = formatTime(data.t);
     document.getElementById("selfSpeed").textContent =
       msToSpeedStrings(data.speed);
     document.getElementById("selfCog").textContent =
@@ -353,20 +360,26 @@
   }
 
   function updateOtherUI(data) {
-    document.getElementById("otherLat").textContent =
-      data ? toDMS(data.lat, true) : "----";
-    document.getElementById("otherLon").textContent =
-      data ? toDMS(data.lon, false) : "----";
+    if (!data) {
+      document.getElementById("otherLat").textContent = "----";
+      document.getElementById("otherLon").textContent = "----";
+      document.getElementById("otherAlt").textContent = "----";
+      document.getElementById("otherTime").textContent = "----";
+      document.getElementById("otherSpeed").textContent = "----";
+      document.getElementById("otherCog").textContent = "----";
+      return;
+    }
+    document.getElementById("otherLat").textContent = toDMS(data.lat, true);
+    document.getElementById("otherLon").textContent = toDMS(data.lon, false);
     document.getElementById("otherAlt").textContent =
-      data && data.alt !== null && data.alt !== undefined
+      data.alt !== null && data.alt !== undefined
         ? data.alt.toFixed(1) + " m"
         : "----";
-    document.getElementById("otherTime").textContent =
-      data ? formatTime(data.t) : "----";
+    document.getElementById("otherTime").textContent = formatTime(data.t);
     document.getElementById("otherSpeed").textContent =
-      data ? msToSpeedStrings(data.speed) : "----";
+      msToSpeedStrings(data.speed);
     document.getElementById("otherCog").textContent =
-      data && data.cog !== null && data.cog !== undefined
+      data.cog !== null && data.cog !== undefined
         ? data.cog.toFixed(1) + "°"
         : "----";
   }
@@ -380,28 +393,26 @@
       brgElem.textContent = "----";
       return;
     }
-    const d = distanceMeters(selfData.lat, selfData.lon,
-                             otherData.lat, otherData.lon);
-    const b = bearingDeg(selfData.lat, selfData.lon,
-                         otherData.lat, otherData.lon);
+    const d = distanceMeters(selfData.lat, selfData.lon, otherData.lat, otherData.lon);
+    const b = bearingDeg(selfData.lat, selfData.lon, otherData.lat, otherData.lon);
     distElem.textContent = d.toFixed(1) + " m";
     brgElem.textContent = b.toFixed(1) + "°";
   }
 
+  // ========== Geolocation ==========
   function startGeolocation() {
     if (!navigator.geolocation) {
       setStatus(false, "この端末は Geolocation API に対応していません。");
       return;
     }
 
-    setStatus(true, "位置情報取得中…");
+    setStatus(false, "位置情報取得中…（接続前でも自位置のみ表示）");
 
     watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const c = pos.coords;
         const now = pos.timestamp;
 
-        // COG計算：1つ前の位置があれば方位を計算
         let cog = null;
         if (lastSelfPos &&
             (c.latitude !== lastSelfPos.lat ||
@@ -415,11 +426,7 @@
           cog = lastSelfCog;
         }
 
-        lastSelfPos = {
-          lat: c.latitude,
-          lon: c.longitude,
-          t: now
-        };
+        lastSelfPos = { lat: c.latitude, lon: c.longitude, t: now };
 
         selfData = {
           lat: c.latitude,
@@ -430,16 +437,16 @@
           t: now
         };
 
-        // 自分の表示更新
+        // 自分UI更新
         updateSelfUI(selfData);
 
-        // Firebase に書き込み
-        if (roomId && deviceId) {
-          const ref = db.ref(`rooms/${roomId}/${deviceId}`);
-          ref.set(selfData).catch((err) => {
-            console.error("DB write error:", err);
-            setStatus(false, "Firebase書き込みエラー");
-          });
+        // WebRTCで送信
+        if (dataChannel && dataChannel.readyState === "open") {
+          try {
+            dataChannel.send(JSON.stringify({ type: "pos", data: selfData }));
+          } catch (e) {
+            console.error("send error:", e);
+          }
         }
 
         // 相対情報更新
@@ -457,50 +464,168 @@
     );
   }
 
-  function listenOther() {
-    if (!roomId || !otherId) return;
-    const ref = db.ref(`rooms/${roomId}/${otherId}`);
-    ref.on("value", (snap) => {
-      const val = snap.val();
-      if (val) {
-        otherData = val;
-        updateOtherUI(otherData);
-        updateRelativeUI();
-        setStatus(true, "接続中（相手のデータ受信）");
-      } else {
-        otherData = null;
-        updateOtherUI(null);
-        updateRelativeUI();
-        setStatus(true, "接続中（相手のデータ待機中…）");
-      }
-    }, (err) => {
-      console.error("DB read error:", err);
-      setStatus(false, "Firebase読み込みエラー");
+  // ========== WebRTC ピア接続 ==========
+  function setupPeerConnection(asCaller) {
+    isCaller = asCaller;
+
+    pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" }
+      ]
     });
-  }
 
-  connectBtn.addEventListener("click", () => {
-    const r = roomInput.value.trim();
-    const d = deviceSelect.value;
+    // ICE候補収集完了時にSDPをテキストエリアへ出力
+    pc.onicecandidate = (ev) => {
+      if (ev.candidate) return; // まだ途中
+      const desc = pc.localDescription;
+      if (!desc) return;
+      const json = JSON.stringify(desc);
+      if (desc.type === "offer") {
+        offerOut.value = json;
+      } else if (desc.type === "answer") {
+        answerOut.value = json;
+      }
+    };
 
-    if (!r) {
-      alert("ルームIDを入力してください。");
-      return;
+    // データチャネル
+    if (asCaller) {
+      dataChannel = pc.createDataChannel("pos");
+      attachDataChannelHandlers(dataChannel);
+    } else {
+      pc.ondatachannel = (ev) => {
+        dataChannel = ev.channel;
+        attachDataChannelHandlers(dataChannel);
+      };
     }
 
-    roomId = r;
-    deviceId = d;
-    otherId = (d === "A") ? "B" : "A";
+    pc.onconnectionstatechange = () => {
+      console.log("connectionState:", pc.connectionState);
+      if (pc.connectionState === "connected") {
+        setStatus(true, "WebRTC接続済み（P2P）");
+      } else if (pc.connectionState === "disconnected" ||
+                 pc.connectionState === "failed" ||
+                 pc.connectionState === "closed") {
+        setStatus(false, "WebRTC切断/エラー: " + pc.connectionState);
+      }
+    };
+  }
 
-    roomInput.disabled = true;
-    deviceSelect.disabled = true;
-    connectBtn.disabled = true;
+  function attachDataChannelHandlers(dc) {
+    dc.onopen = () => {
+      console.log("DataChannel open");
+      setStatus(true, "データチャネル接続済み（位置情報共有中）");
+      // 現在位置が取れていれば、すぐに送信開始
+      if (selfData) {
+        try {
+          dc.send(JSON.stringify({ type: "pos", data: selfData }));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    };
+    dc.onclose = () => {
+      console.log("DataChannel close");
+      setStatus(false, "データチャネル切断");
+    };
+    dc.onerror = (e) => {
+      console.error("DataChannel error:", e);
+      setStatus(false, "データチャネルエラー");
+    };
+    dc.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === "pos") {
+          otherData = msg.data;
+          updateOtherUI(otherData);
+          updateRelativeUI();
+        }
+      } catch (e) {
+        console.error("onmessage parse error:", e);
+      }
+    };
+  }
 
-    setStatus(true, "Firebase接続 & 位置取得開始…");
+  // ========== イベントハンドラ ==========
+  startCallerBtn.addEventListener("click", async () => {
+    if (pc) {
+      alert("すでに初期化されています。");
+      return;
+    }
+    setupPeerConnection(true);
+    setStatus(false, "A側：オファー生成中…");
+    startCallerBtn.disabled = true;
+    startAnswerBtn.disabled = true;
 
-    startGeolocation();
-    listenOther();
+    startGeolocation(); // 位置取得開始
+
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      setStatus(false, "A側：オファーSDP生成完了。テキストをBへ送ってください。");
+    } catch (e) {
+      console.error(e);
+      setStatus(false, "A側：オファー生成エラー");
+    }
+  });
+
+  startAnswerBtn.addEventListener("click", () => {
+    if (pc) {
+      alert("すでに初期化されています。");
+      return;
+    }
+    setupPeerConnection(false);
+    setStatus(false, "B側：AからのオファーSDPを貼付後、ボタンを押してください。");
+    startCallerBtn.disabled = true;
+    startAnswerBtn.disabled = true;
+
+    startGeolocation(); // 位置取得開始
+  });
+
+  applyOfferBtn.addEventListener("click", async () => {
+    if (!pc || isCaller !== false) {
+      alert("B側として初期化されている必要があります。（「この端末をBとして開始」を先に押してください）");
+      return;
+    }
+    const txt = offerIn.value.trim();
+    if (!txt) {
+      alert("オファーSDPが空です。A側から受け取ったJSONを貼り付けてください。");
+      return;
+    }
+    try {
+      const desc = JSON.parse(txt);
+      await pc.setRemoteDescription(desc);
+      setStatus(false, "B側：オファー受信。アンサー生成中…");
+
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      setStatus(false, "B側：アンサーSDP生成完了。テキストをAへ送ってください。");
+    } catch (e) {
+      console.error(e);
+      setStatus(false, "B側：オファー読み込み/アンサー生成エラー");
+    }
+  });
+
+  applyAnswerBtn.addEventListener("click", async () => {
+    if (!pc || isCaller !== true) {
+      alert("A側として初期化されている必要があります。（「この端末をAとして開始」を先に押してください）");
+      return;
+    }
+    const txt = answerIn.value.trim();
+    if (!txt) {
+      alert("アンサーSDPが空です。B側から受け取ったJSONを貼り付けてください。");
+      return;
+    }
+    try {
+      const desc = JSON.parse(txt);
+      await pc.setRemoteDescription(desc);
+      setStatus(false, "A側：アンサー適用完了。接続確立を待っています…");
+    } catch (e) {
+      console.error(e);
+      setStatus(false, "A側：アンサー適用エラー");
+    }
   });
 </script>
 </body>
 </html>
+
+
